@@ -1,12 +1,14 @@
-# Attention Mechanism
-:label:`chapter_attention`
+# Appendix
 
-Attention is a generalized pooling method with bias alignment over inputs.
 
 ```toc
 :maxdepth: 2
 
-attention
-seq2seq-attention
-transformer
+notation
+math
+jupyter
+aws
+buy-gpu
+how-to-contribute
+d2l
 ```

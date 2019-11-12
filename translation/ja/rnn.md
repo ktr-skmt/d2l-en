@@ -60,7 +60,7 @@ RNN parameters include the weight $\mathbf{W}_{xh} \in \mathbb{R}^{d \times h}, 
 
 Now we illustrate how RNNs can be used to build a language model. For simplicity of illustration we use words rather than characters, since the former are easier to comprehend. Let the number of mini-batch examples be 1, and the sequence of the text be the beginning of our dataset, i.e. "the time machine by h. g. wells". The figure below illustrates how to estimate the next word based on the present and previous words. During the training process, we run a softmax operation on the output from the output layer for each time step, and then use the cross-entropy loss function to compute the error between the result and the label. Due to the recurrent computation of the hidden state in the hidden layer, the output of time step 3,  $\mathbf{O}_3$, is determined by the text sequence "the", "time", "machine". Since the next word of the sequence in the training data is "by", the loss of time step 3 will depend on the probability distribution of the next word generated based on the sequence "the", "time", "machine" and the label "by" of this time step.
 
-![Word-level RNN language model. The input and label sequences are <code>The Time Machine by H.</code> and <code>Time Machine by H. G.</code> respectively. ](../img/rnn-train.svg)
+![Word-level RNN language model. The input and label sequences are <code mark=](../img/rnn-train.svg)The Time Machine by H.</code> and <code>Time Machine by H. G.</code> respectively. " />
 
 In practice, each word is presented by a $d$ dimensional vector, and we use a batch size $n>1$, therefore, the input $\mathbf X_t$ at time step $t$ will be a $n\times d$ matrix, which is identical to what we discussed before.
 

@@ -1,21 +1,19 @@
-# Natural Language Processing
-:label:`chapter_nlp`
+# Multilayer Perceptrons
+:label:`chapter_perceptrons`
 
-Natural language processing is concerned with interactions between computers and humans that use natural language. In practice, it is very common for us to use this technique to process and analyze large amounts of natural language data, like the language models from the "Recurrent Neural Networks" section.
-
-In this chapter, we will discuss how to use vectors to represent words and train the word vectors on a corpus. We will also use word vectors pre-trained on a larger corpus to find synonyms and analogies. Then, in the text classification task, we will use word vectors to analyze the emotion of a text and explain the important ideas of timing data classification based on RNNs and the convolutional neural networks. In addition, many of the outputs of natural language processing tasks are not fixed, such as sentences of arbitrary length. We will introduce the encoder-decoder model, beam search, and attention mechanisms to address problems of this type and apply them to machine translation.
+In this chapter, we will introduce your first truly *deep* networks. The simplest deep networks are called multilayer perceptrons, and they consist of many layers of neurons each fully connected to those in the layer below (from which they receive input) and those above (which they, in turn, influence). When we train high-capacity models we run the risk of overfitting. Thus, we will need to provide your first rigorous introduction to the notions of overfitting, underfitting, and capacity control. To help you combat these problems, we will introduce regularization techniques such as dropout and weight decay. We will also discuss issues relating to numerical stability and parameter initialization that are key to successfully training deep networks. Throughout, we focus on applying models to real data, aiming to give the reader a firm grasp not just of the concepts but also of the practice of using deep networks. We punt matters relating to the computational performance, scalability and efficiency of our models to subsequent chapters.
 
 ```toc
 :maxdepth: 2
 
-word2vec
-approx-training
-word2vec-data-set
-word2vec-gluon
-fasttext
-glove
-similarity-analogy
-sentiment-analysis
-sentiment-analysis-rnn
-sentiment-analysis-cnn
+mlp
+mlp-scratch
+mlp-gluon
+underfit-overfit
+weight-decay
+dropout
+backprop
+numerical-stability-and-init
+environment
+kaggle-house-price
 ```

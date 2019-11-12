@@ -1,89 +1,146 @@
 # Attention Mechanism
 
-As we learned in the ["Encoder-Decoder(seq2seq)"](seq2seq.md) section, the decoder relies on the same context variable at each time step to obtain input sequence information.  When the encoder is an RNN, the context variable will be from the hidden state of its final time step.
+In :numref:`chapter_seq2seq`, we encode the source sequence input information in the recurrent unit state, and then pass it to the decoder to generate the target sequence. A token in the target sequence may closely relate to some tokens in the source sequence instead of the whole source sequence. For example, when translating "Hello world." to "Bonjour le monde.", "Bonjour" maps to "Hello" and "monde" maps to "world". In the seq2seq model, the decoder may implicitly select the corresponding information from the state passed by the decoder. The attention mechanism, however, makes this selection explicit.
 
-Now, let us take another look at the translation example mentioned in that section: the input is an English sequence "They", "are", "watching", ".", and the output is a French sequence "Ils", "regardent", ".". It is not hard to see that the decoder only needs to use partial information from the input sequence to generate each word in the output sequence. For example, at time step 1 of the output sequence, the decoder can mainly rely on the information of "They" and "are" to generate "Ils". At time step 2, mainly the encoded information from "watching" is used to generate "regardent". Finally, at time step 3, the period "." is mapped directly.  At each time step, it looks like the decoder is assigning different attentions to the encoded information of different time steps in the input sequence. This is the source of the attention mechanism[1].
+Attention is a generalized pooling method with bias alignment over inputs. The core component in the attention mechanism is the attention layer, or called attention for simplicity. An input of the attention layer is called a query. For a query, the attention layer returns the output based on its memory, which is a set of key-value pairs. To be more specific, assume a query $\mathbf{q}\in\mathbb R^{d_q}$, and the memory contains $n$ key-value pairs, $(\mathbf{k}_1, \mathbf{v}_1), \ldots, (\mathbf{k}_n, \mathbf{v}_n)$, with $\mathbf{k}_i\in\mathbb R^{d_k}$, $\mathbf{v}_i\in\mathbb R^{d_v}$. The attention layer then returns an output $\mathbf o\in\mathbb R^{d_v}$ with the same shape has a value.
 
-Here, we will continue to use RNN as an example. The attention mechanism obtains the context variable by weighting the hidden state of all time steps of the encoder. The decoder adjusts these weights, i.e., attention weights, at each time step so that different portions of the input sequence can be focused on at different time steps and encoded into context variables of the corresponding time step. In this section, we will discuss how the attention mechanism works.
+![The attention layer returns an output based on the input query and its memory.](../img/attention.svg)
 
+To compute the output, we first assume there is a score function $\alpha$ which measure the similarity between the query and a key. Then we compute all $n$ scores $a_1, \ldots, a_n$ by
 
-In the ["Encoder-Decoder(seq2seq)"](seq2seq.md) section, we were able to distinguish between the input sequence/encoder index $t$ and the output sequence/decoder index $t'$. In that section, $\boldsymbol{s}_{t'} = g(\boldsymbol{y}_{t'-1}, \boldsymbol{c}, \boldsymbol{s}_{t'-1})$ is the hidden state of the decoder at time step $t'$.Here, $\boldsymbol{y}_{t'-1}$ is the feature representation of output $y_{t'-1}$ from the previous time step $t'-1$, and any time step $t'$ uses the same context variable $\boldsymbol{c}$. However, in the attention mechanism, each time step of the decoder will use variable context variables. If $\boldsymbol{c}_{t'}$ is the context variable of the decoder at time step $t'$, then the hidden state of the decoder at that time step can be rewritten as
+$$a_i = \alpha(\mathbf q, \mathbf k_i).$$
 
-$$\boldsymbol{s}_{t'} = g(\boldsymbol{y}_{t'-1}, \boldsymbol{c}_{t'}, \boldsymbol{s}_{t'-1}).$$
+Next we use softmax to obtain the attention weights
 
-The key here is to figure out how to compute the context variable $\boldsymbol{c}_{t'}$ and use it to update the hidden state $\boldsymbol{s}_{t'}$. Below, we will introduce these two key points separately.
+$$b_1, \ldots, b_n = \textrm{softmax}(a_1, \ldots, a_n).$$
 
+The output is then a weight sum of the values
 
-## Compute the Context Variable
+$$\mathbf o = \sum_{i=1}^n b_i \mathbf v_i.$$
 
-Figure 10.12 depicts how the attention mechanism computes the context variable for the decoder at time step 2. First, function $a$ will compute the input of the softmax operation based on the hidden state of the decoder at time step 1 and the hidden states of the encoder at each time step. The Softmax operation outputs a probability distribution and weights the hidden state of each time step of the encoder to obtain a context variable.
+Different choices of the score function lead to different attention layers. We will discuss two commonly used attention layers in the rest of this section. Before diving into the implementation, we first introduce a masked version of the softmax operator and explain a specialized dot operator `nd.batched_dot`.
 
-![Attention mechanism based on the encoder-decoder. ](../img/attention.svg)
+```{.python .input  n=1}
+import math
+from mxnet import nd
+from mxnet.gluon import nn
+```
 
+The masked softmax takes a 3-dim input and allows to filter out some elements by specifying valid lengths for the last dimension. (refer to :numref:`chapter_machine_translation` for the definition of a valid length.)
 
-Specifically, if we know that the hidden state of the encoder at time step $t$ is $\boldsymbol{h}_t$ and the total number of time steps is $T$, then the context variable of the decoder at time step $t'$ is the weighted average on all the hidden states of the encoder:
+```{.python .input  n=6}
+# Save to the d2l package.
+def masked_softmax(X, valid_length):
+    # X: 3-D tensor, valid_length: 1-D or 2-D tensor
+    if valid_length is None:
+        return X.softmax()
+    else:
+        shape = X.shape
+        if valid_length.ndim == 1:
+            valid_length = valid_length.repeat(shape[1], axis=0)
+        else:
+            valid_length = valid_length.reshape((-1,))
+        # fill masked elements with a large negative, whose exp is 0
+        X = nd.SequenceMask(X.reshape((-1, shape[-1])), valid_length, True,
+                            axis=1, value=-1e6)
+        return X.softmax().reshape(shape)
+```
 
-$$\boldsymbol{c}_{t'} = \sum_{t=1}^T \alpha_{t' t} \boldsymbol{h}_t,$$
+Construct two examples, which each example is a 2-by-4 matrix, as the input. If specify the valid length for the first example to be 2, then only the first two columns of this example are used to compute softmax.
 
-When $t'$ is given, the value of weight $\alpha_{t't}$ at $t=1, \ldots,T$ is a probability distribution. In order to obtain the probability distribution, we are going to use the softmax operation:
+```{.python .input  n=5}
+masked_softmax(nd.random.uniform(shape=(2,2,4)), nd.array([2,3]))
+```
 
-$$\alpha_{t' t} = \frac{\exp(e_{t' t})}{ \sum_{k=1}^T \exp(e_{t' k}) },\quad t=1,\ldots,T.$$
+The operator `nd.batched_dot` takes two inputs $X$ and $Y$ with shapes $(b, n, m)$ and $(b, m, k)$, respectively. It computes $b$ dot products, with `Z[i,:,:]=dot(X[i,:,:], Y[i,:,:]` for $i=1,\ldots,n$.
 
-Now we need to define how to compute input $e_{t' t}$ of the softmax operation in the formula above. Since $e_{t' t}$ depends on both the decoder's time step $t'$ and the encoder's time step $t$, we might as well use the decoder's hidden state $\boldsymbol{s}_{t' - 1}$ at that time step $t'-1$ and the encoder's hidden state $\boldsymbol{h}_t$ at that time step as the input and compute $e_{t' t}$ with function $a$.
+```{.python .input  n=4}
+nd.batch_dot(nd.ones((2,1,3)), nd.ones((2,3,2)))
+```
 
-$$e_{t' t} = a(\boldsymbol{s}_{t' - 1}, \boldsymbol{h}_t).$$
+## Dot Product Attention
 
+The dot product assume the query has the same dimension with the keys, namely $\mathbf q, \mathbf k_i \in\mathbb R^d$ for all $i$. It computes the score by an inner product between the query and a key, and often then divided by $\sqrt{d}$ to make the scores less sensitive to the dimension $d$. In other words,
 
-Here, we have several options for function $a$. If the two input vectors are of the same length, a simple choice is to compute their inner product $a(\boldsymbol{s}, \boldsymbol{h})=\boldsymbol{s}^\top \boldsymbol{h}$. In the paper that first introduced the attention mechanism, the authors transformed the concatenated input through a multilayer perceptron with a single hidden layer[1].
+$$\alpha(\mathbf q, \mathbf k) = \langle \mathbf q, \mathbf k \rangle /\sqrt{d}.$$
 
-$$a(\boldsymbol{s}, \boldsymbol{h}) = \boldsymbol{v}^\top \tanh(\boldsymbol{W}_s \boldsymbol{s} + \boldsymbol{W}_h \boldsymbol{h}),$$
+Assume $\mathbf Q\in\mathbb R^{m\times d}$ contains $m$ queries and $\mathbf K\in\mathbb R^{n\times d}$ has all $n$ keys. We can compute all $mn$ scores by
 
-Here, $\boldsymbol{v}$, $\boldsymbol{W}_s$, and $\boldsymbol{W}_h$ are all model parameters that can be learned.
+$$\alpha(\mathbf Q, \mathbf K) = \mathbf Q \mathbf K^T /\sqrt{d}.$$
 
-### Vectorization
+Now let's implement this layer that supports a batch of queries and key-value pairs. In addition, it supports to randomly drop some attention weights as a regularization.
 
-We can also use vectorization to compute more efficiently within the attention mechanism. Generally speaking, the input of the attention model consists of query entries, key entries, and value entries. There is also a one-to-one correspondence between the key entries and value entries. Here, the value entry is a set of entries that requires a weighted average. In the weighted average, the weight of the value entry is obtained by computing the query entry and the key entry corresponding to the value entry.
+```{.python .input  n=5}
+# Save to the d2l package.
+class DotProductAttention(nn.Block): 
+    def __init__(self, dropout, **kwargs):
+        super(DotProductAttention, self).__init__(**kwargs)
+        self.dropout = nn.Dropout(dropout)
 
-In the example above, the query entry is the hidden state of the decoder, and the key entry and value entry are hidden states of the encoder. Now, we will look at a common simple case where the encoder and decoder have $h$ hidden units and we have the function $a(\boldsymbol{s}, \boldsymbol{h})=\boldsymbol{s}^ \top \boldsymbol{h}$. Assume that we want to compute the context vector $\boldsymbol{c}_{t'}\in \mathbb{R}^{h}$ based on the single hidden state of the decoder $\boldsymbol{s}_{t' - 1} \in \mathbb{R}^{h}$ and all the hidden states of the encoder $\boldsymbol{h}_t \in \mathbb{R}^{h}, t = 1,\ldots,T$. We can let the query entry matrix $\boldsymbol{Q} \in \mathbb{R}^{1 \times h}$ be $\boldsymbol{s}_{t' - 1}^\top$ and the key entry matrix $\boldsymbol{K} \in \mathbb{R}^{T \times h}$ have the same value as the entry matrix $\boldsymbol{V} \in \mathbb{R}^{T \times h}$, with all the values in row $t$ set to $\boldsymbol{h}_t^\top$. Now, we only need to use vectorization
+    # query: (batch_size, #queries, d)
+    # key: (batch_size, #kv_pairs, d)
+    # value: (batch_size, #kv_pairs, dim_v)
+    # valid_length: either (batch_size, ) or (batch_size, xx)
+    def forward(self, query, key, value, valid_length=None):
+        d = query.shape[-1]
+        # set transpose_b=True to swap the last two dimensions of key
+        scores = nd.batch_dot(query, key, transpose_b=True) / math.sqrt(d)
+        attention_weights = self.dropout(masked_softmax(scores, valid_length))
+        return nd.batch_dot(attention_weights, value)
+```
 
-$$\text{softmax}(\boldsymbol{Q}\boldsymbol{K}^\top)\boldsymbol{V}$$
+Now we create two batches, and each batch has one query and 10 key-value pairs.  We specify through `valid_length` that the first batch we will only pay attention to the first 2 key-value pairs, while the second batch will check the first 6 key-value pairs. Therefore, both batches have the same query, key-value pairs, we obtain different outputs.
 
-to compute the transposed context vector $\boldsymbol{c}_{t'}^\top$. When the query entry matrix $\boldsymbol{Q}$ has $n$ rows, the formula above will be able to obtain the output matrix of row $n$. The output matrix and the query entry matrix correspond one-to-one on the same row.
+```{.python .input  n=6}
+atten = DotProductAttention(dropout=0.5)
+atten.initialize()
+keys = nd.ones((2,10,2))
+values = nd.arange(40).reshape((1,10,4)).repeat(2,axis=0)
+atten(nd.ones((2,1,2)), keys, values, nd.array([2, 6]))
+```
 
+## Multilayer Perception Attention
 
+In multilayer perception attention, we first project both query and keys into
 
-## Update the Hidden State
+To be more specific, assume learnable parameters $\mathbf W_k\in\mathbb R^{h\times d_k}$, $\mathbf W_q\in\mathbb R^{h\times d_q}$, and $\mathbf v\in\mathbb R^{p}$, then the score function is defined by
 
-Using the gated recurrent unit (GRU) as an example, we can modify the design of the GRU slightly in the decoder[1]. The decoder's hidden state at time step $t'$ will be
+$$\alpha(\mathbf k, \mathbf q) = \mathbf v^T \text{tanh}(\mathbf W_k \mathbf k + \mathbf W_q\mathbf q). $$
 
-$$\boldsymbol{s}_{t'} = \boldsymbol{z}_{t'} \odot \boldsymbol{s}_{t'-1}  + (1 - \boldsymbol{z}_{t'}) \odot \tilde{\boldsymbol{s}}_{t'},$$
+It equals to concatenate the key and value in the feature dimension, and the feed into a single hidden-layer perception with hidden size $h$ and output size $1$. The hidden layer activation function is tanh, and no bias is applied.
 
-Here, the candidate implied states of the reset gate and update gate are
+```{.python .input  n=7}
+# Save to the d2l package.
+class MLPAttention(nn.Block):  
+    def __init__(self, units, dropout, **kwargs):
+        super(MLPAttention, self).__init__(**kwargs)
+        # Use flatten=True to keep query's and key's 3-D shapes.
+        self.W_k = nn.Dense(units, activation='tanh',
+                            use_bias=False, flatten=False)
+        self.W_q = nn.Dense(units, activation='tanh',
+                            use_bias=False, flatten=False)
+        self.v = nn.Dense(1, use_bias=False, flatten=False)
+        self.dropout = nn.Dropout(dropout)
 
+    def forward(self, query, key, value, valid_length):
+        query, key = self.W_k(query), self.W_q(key)
+        # expand query to (batch_size, #querys, 1, units), and key to
+        # (batch_size, 1, #kv_pairs, units). Then plus them with broadcast.
+        features = query.expand_dims(axis=2) + key.expand_dims(axis=1)
+        scores = self.v(features).squeeze(axis=-1)
+        attention_weights = self.dropout(masked_softmax(scores, valid_length))
+        return nd.batch_dot(attention_weights, value)
+```
 
-$$ \begin{aligned} \boldsymbol{r}_{t'} &= \sigma(\boldsymbol{W}_{yr} \boldsymbol{y}_{t'-1} + \boldsymbol{W}_{sr} \boldsymbol{s}_{t' - 1} + \boldsymbol{W}_{cr} \boldsymbol{c}_{t'} + \boldsymbol{b}_r),\\ \boldsymbol{z}_{t'} &= \sigma(\boldsymbol{W}_{yz} \boldsymbol{y}_{t'-1} + \boldsymbol{W}_{sz} \boldsymbol{s}_{t' - 1} + \boldsymbol{W}_{cz} \boldsymbol{c}_{t'} + \boldsymbol{b}_z),\\ \tilde{\boldsymbol{s}}_{t'} &= \text{tanh}(\boldsymbol{W}_{ys} \boldsymbol{y}_{t'-1} + \boldsymbol{W}_{ss} (\boldsymbol{s}_{t' - 1} \odot \boldsymbol{r}_{t'}) + \boldsymbol{W}_{cs} \boldsymbol{c}_{t'} + \boldsymbol{b}_s), \end{aligned} $$
+Despite `MLPAttention` contains an additional MLP model in it, given the same inputs with identical keys, we obtain the same output as for `DotProductAttention`.
 
-Here, $\boldsymbol{W}$ and $\boldsymbol{b}$ with subscripts are the weight parameters and bias parameters of the GRU.
+```{.python .input  n=8}
+atten = MLPAttention(units=8, dropout=0.1)
+atten.initialize()
+atten(nd.ones((2,1,2)), keys, values, nd.array([2, 6]))
+```
 
 ## Summary
 
-* We can use different context variables at each time step of the decoder and assign different attentions to the information encoded in different time steps of the input sequence.
-* Generally speaking, the input of the attention model consists of query entries, key entries, and value entries. There is also a one-to-one correspondence between the key entries and value entries.
-* With the attention mechanism, we can adopt vectorization for higher efficiency.
-
-
-## Exercises
-
-* Based on the model design in this section, why can't we concatenate hidden state $\boldsymbol{s}_{t' - 1}^\top \in \mathbb{R}^{1 \times h}, t' \in 1, \ldots, T'$ from different time steps of the decoder to create the query entry matrix $\boldsymbol{Q} \in \mathbb{R}^{T' \times h}$ to compute context variable $\boldsymbol{c}_{t'}^\top, t' \in 1, \ldots, T'$ of the attention mechanism at different time steps simultaneously?
-
-* Without modifying the function `gru` from the ["Gated Recurrent Unit (GRU)"](../chapter_recurrent-neural-networks/gru.md) section, how can we use it to implement the decoder introduced in this section?
-
-* In addition to natural language processing, where else can the attention mechanism be applied?
-
-## Reference
-
-[1] Bahdanau, D., Cho, K., & Bengio, Y. (2014). Neural machine translation by jointly learning to align and translate. arXiv preprint arXiv:1409.0473.
-
-## Scan the QR Code to [Discuss](https://discuss.mxnet.io/t/2395)
-
-![](../img/qr_attention.svg)
+* An attention layer explicitly selects related information.
+* An attention layer's memory consists of key-value pairs, so its output is close to the values whose keys are similar to the query.

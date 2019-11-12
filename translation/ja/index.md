@@ -1,14 +1,9 @@
-# Appendix
-
+# Generative Adversarial Networks
+:label:`chapter_gans`
 
 ```toc
 :maxdepth: 2
 
-notation
-math
-jupyter
-aws
-buy-gpu
-how-to-contribute
-d2l
+gan
+dcgan
 ```

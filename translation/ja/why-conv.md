@@ -27,6 +27,7 @@ Let's see how this translates into mathematics.
 ## Constraining the MLP
 
 
+
 <!-- In this exposition, we treat both images and hidden layers
 alike as two-dimensional arrays.  --> To start off let's consider what an MLP would look like with $h \times w$ images as inputs (represented as matrices in math, and as 2D arrays in code), and hidden representations similarly organized as $h \times w$ matrices / 2D arrays. Let $x[i,j]$ and $h[i,j]$ denote pixel location $(i,j)$ in an image and hidden representation, respectively. Consequently, to have each of the $hw$ hidden nodes receive input from each of the $hw$ inputs, we would switch from using weight matrices (as we did previously in MLPs) to representing our parameters as four-dimensional weight tensors.
 

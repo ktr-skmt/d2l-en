@@ -238,7 +238,7 @@ Ent  -    -    -     Ent      -    Ent
 
 With speech recognition, the input sequence $x$ is the sound of a speaker, and the output $y$ is the textual transcript of what the speaker said. The challenge is that there are many more audio frames (sound is typically sampled at 8kHz or 16kHz) than text, i.e. there is no 1:1 correspondence between audio and text, since thousands of samples correspond to a single spoken word. These are `seq2seq` problems where the output is much shorter than the input.
 
-![<code>-D-e-e-p- L-ea-r-ni-ng-</code>](../img/speech.png) :width:`700px`
+![<code mark=](../img/speech.png)-D-e-e-p- L-ea-r-ni-ng-</code>" /> :width:`700px`
 
 ##### Text to Speech
 
